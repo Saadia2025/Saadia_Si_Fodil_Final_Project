@@ -1,28 +1,84 @@
+import express from "express";
+import cors from "cors";
+import sqlite3 from "sqlite3";
+import { open } from "sqlite";
+import path from "path";
+import { fileURLToPath } from "url";
 
-import pandas as pd
-import sqlite3
+const DB_NAME = "Banks.db";
+const TABLE_NAME = "Largest_banks";
+const PORT = 3000;
 
-csv_url = "https://datahub.io/core/gdp/r/gdp.csv"
-db_name = "Banks.db"
-table_name = "Largest_banks"
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-# Read CSV
-df = pd.read_csv(csv_url)
+const app = express();
+app.use(cors());
+app.use(express.json());
+app.use(express.static(__dirname)); // sert index.html et autres fichiers statiques
 
-# Keep latest year per country
-df_recent = df.sort_values("Year", ascending=False).drop_duplicates(subset=["Country Name"])
+// utilitaire DB
+async function getDBConnection() {
+  return open({
+    filename: DB_NAME,
+    driver: sqlite3.Database,
+  });
+}
 
-# Convert GDP to billions USD
-df_recent["GDP_USD_billions"] = (df_recent["Value"].astype(float) / 1_000_000_000).round(2)
+// endpoint : tous les pays
+app.get("/countries", async (req, res) => {
+  try {
+    const db = await getDBConnection();
+    const rows = await db.all(`SELECT * FROM ${TABLE_NAME} ORDER BY GDP_USD_billions DESC`);
+    await db.close();
+    console.log(`/countries -> ${rows.length} rows`);
+    res.json({ count: rows.length, rows });
+  } catch (err) {
+    console.error("Error /countries:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
 
-# Keep relevant columns
-df_final = df_recent[["Country Name", "GDP_USD_billions"]].copy()
-df_final.columns = ["Country", "GDP_USD_billions"]
+// endpoint : pays riches (seuil paramétrable)
+app.get("/rich-countries", async (req, res) => {
+  try {
+    // seuil par défaut = 10000 (milliards USD)
+    const threshold = Number(req.query.threshold ?? 10000);
+    const db = await getDBConnection();
+    // attention : on s'assure que la colonne est comparée numériquement
+    const rows = await db.all(
+      `SELECT * FROM ${TABLE_NAME} WHERE GDP_USD_billions >= ? ORDER BY GDP_USD_billions DESC`,
+      [threshold]
+    );
+    await db.close();
+    console.log(`/rich-countries?threshold=${threshold} -> ${rows.length} rows`);
+    res.json({ threshold, count: rows.length, rows });
+  } catch (err) {
+    console.error("Error /rich-countries:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
 
-# Save to SQLite
-conn = sqlite3.connect(db_name)
-df_final.to_sql(table_name, conn, if_exists="replace", index=False)
-conn.close()
+// simple route d'info/debug (optionnel)
+app.get("/debug-counts", async (req, res) => {
+  try {
+    const db = await getDBConnection();
+    const totalObj = await db.get(`SELECT COUNT(*) as c FROM ${TABLE_NAME}`);
+    const richObj = await db.get(`SELECT COUNT(*) as c FROM ${TABLE_NAME} WHERE GDP_USD_billions >= 10000`);
+    await db.close();
+    res.json({ total: totalObj.c, rich_ge_10000: richObj.c });
+  } catch (err) {
+    console.error("Error /debug-counts:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
 
-print("✅ Database created successfully:", db_name)
-print(df_final.head())
+// page principale
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "index.html"));
+});
+
+app.listen(PORT, () => {
+  console.log(` Server running at http://localhost:${PORT}`);
+});
+
