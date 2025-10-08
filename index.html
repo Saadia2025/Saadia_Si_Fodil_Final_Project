@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <title>Countries by GDP</title>
+  <style>
+    body { font-family: Arial; margin: 20px; background:#f7f9fc; }
+    button { padding: 8px 12px; margin-right: 8px; border-radius:6px; border:none; background:#0078d4; color:white; cursor:pointer; }
+    table { border-collapse:collapse; width:100%; margin-top:16px; }
+    th, td { border:1px solid #ddd; padding:8px; text-align:left; }
+    th { background:#0078d4; color:white; }
+    #info { margin-top:10px; color:#333; }
+  </style>
+</head>
+<body>
+  <h1>🌍 Countries by GDP</h1>
+  <div>
+    <button id="btnAll">Show All Countries</button>
+    <button id="btnRich">Show Rich Countries </button>
+    <label style="margin-left:12px;">
+      Threshold:
+      <input id="threshold" type="number" value="10000" style="width:100px" />
+    </label>
+  </div>
+  <div id="info"></div>
+
+  <table id="table">
+    <thead>
+      <tr><th>Country</th><th>GDP (Billions USD)</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    async function render(endpoint) {
+      try {
+        // éviter cache en ajoutant timestamp
+        const url = endpoint + (endpoint.includes("?") ? "&" : "?") + "t=" + Date.now();
+        const res = await fetch(url);
+        const json = await res.json();
+        const rows = json.rows ?? json; // support si serveur renvoie format différent
+        const count = json.count ?? (rows ? rows.length : 0);
+        document.getElementById("info").textContent = `Résultats: ${count} (endpoint: ${endpoint})`;
+        const tbody = document.querySelector("#table tbody");
+        tbody.innerHTML = "";
+        (rows || []).forEach(r => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td>${r.Country}</td><td>${r.GDP_USD_billions}</td>`;
+          tbody.appendChild(tr);
+        });
+      } catch (err) {
+        document.getElementById("info").textContent = "Erreur: impossible de charger les données";
+        console.error(err);
+      }
+    }
+
+    document.getElementById("btnAll").addEventListener("click", () => render("/countries"));
+    document.getElementById("btnRich").addEventListener("click", () => {
+      const thr = Number(document.getElementById("threshold").value) || 10000;
+      render(`/rich-countries?threshold=${thr}`);
+    });
+
+    // charge tout par défaut
+    render("/countries");
+  </script>
+</body>
+</html>
+
+
